@@ -7,20 +7,38 @@ import (
 )
 
 type Service interface {
-	GetIssueData(repoId int64, issueNumber int) (*IssueData, error)
+	GetIssueData(repoId int, issueNumber int) (*IssueData, error)
 	doRequest(path string, response interface{}) error
+	GetEpics(repoId int) (map[int]*EpicData, error)
 }
 
-const ZENHUB_API = "https://api.zenhub.com"
-const ISSUES_PATH = "/p1/repositories/%d/issues/%d"
+const ZenHubApi = "https://api.zenhub.com"
+const IssuesPath = "/p1/repositories/%d/issues/%d"
+const EpicsListPath = "/p1/repositories/%d/epics"
+const EpicPath = "/p1/repositories/%d/epics/%d"
 
 type IssueData struct {
-	Estimate IntValue
-	IsEpic   bool `json:"is_epic"`
+	IssueNumber int `json:"issue_number"`
+	Estimate    IntValue
+	IsEpic      bool `json:"is_epic"`
+}
+
+type EpicData struct {
+	IssueNumber        int
+	TotalEpicEstimates IntValue `json:"total_epic_estimates"`
+	Estimate           IntValue
+	Issues             []IssueData
 }
 
 type IntValue struct {
 	Value uint
+}
+
+type epicListResponse struct {
+	EpicIssues []struct {
+		IssueNumber int `json:"issue_number"`
+		RepoId      int `json:"repo_id"`
+	} `json:"epic_issues"`
 }
 
 type Client struct {
@@ -33,9 +51,31 @@ func NewClient(token string) Service {
 	}
 }
 
-func (c *Client) GetIssueData(repoId int64, issueNumber int) (*IssueData, error) {
+func (c *Client) GetEpics(repoId int) (map[int]*EpicData, error) {
+	epicsList := &epicListResponse{}
+	err := c.doRequest(fmt.Sprintf(EpicsListPath, repoId), epicsList)
+	if err != nil {
+		return nil, err
+	}
+
+	epics := map[int]*EpicData{}
+
+	for _, epicIssue := range epicsList.EpicIssues {
+		epic := &EpicData{}
+		err := c.doRequest(fmt.Sprintf(EpicPath, repoId, epicIssue.IssueNumber), epic)
+		if err != nil {
+			return nil, err
+		}
+		epic.IssueNumber = epicIssue.IssueNumber
+		epics[epicIssue.IssueNumber] = epic
+	}
+
+	return epics, nil
+}
+
+func (c *Client) GetIssueData(repoId int, issueNumber int) (*IssueData, error) {
 	data := &IssueData{}
-	err := c.doRequest(fmt.Sprintf(ISSUES_PATH, repoId, issueNumber), data)
+	err := c.doRequest(fmt.Sprintf(IssuesPath, repoId, issueNumber), data)
 	if err != nil {
 		return &IssueData{}, err
 	} else {
@@ -45,7 +85,7 @@ func (c *Client) GetIssueData(repoId int64, issueNumber int) (*IssueData, error)
 
 func (c *Client) doRequest(path string, response interface{}) error {
 
-	request, err := http.NewRequest("GET", ZENHUB_API+path, nil)
+	request, err := http.NewRequest("GET", ZenHubApi+path, nil)
 	if err != nil {
 		return err
 	}
