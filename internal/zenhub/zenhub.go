@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 type Service interface {
@@ -85,25 +87,37 @@ func (c *Client) GetIssueData(repoId int, issueNumber int) (*IssueData, error) {
 
 func (c *Client) doRequest(path string, response interface{}) error {
 
-	request, err := http.NewRequest("GET", ZenHubApi+path, nil)
-	if err != nil {
-		return err
+	for {
+		request, err := http.NewRequest("GET", ZenHubApi+path, nil)
+		if err != nil {
+			return err
+		}
+
+		request.Header.Add("Content-Type", "application/json")
+		request.Header.Add("X-Authentication-Token", c.token)
+
+		resp, err := http.DefaultClient.Do(request)
+		if resp.Header.Get("X-RateLimit-Used") == resp.Header.Get("X-RateLimit-Limit") {
+			resetTimeInt, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64)
+			resetTime := time.Unix(resetTimeInt, 0)
+			if err != nil {
+				return err
+			}
+			time.Sleep(resetTime.Sub(time.Now()))
+			continue
+		}
+
+		if err != nil {
+			return err
+		}
+
+		err = json.NewDecoder(resp.Body).Decode(response)
+		if err != nil {
+			return err
+		}
+
+		resp.Body.Close()
+		return nil
 	}
 
-	request.Header.Add("Content-Type", "application/json")
-	request.Header.Add("X-Authentication-Token", c.token)
-
-	resp, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-
-	err = json.NewDecoder(resp.Body).Decode(response)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
