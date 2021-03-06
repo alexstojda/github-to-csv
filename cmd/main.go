@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github-to-csv/internal/zenhub"
 	"github.com/google/go-github/v32/github"
 	"github.com/jszwec/csvutil"
@@ -22,6 +23,7 @@ type Issue struct {
 	EpicNumber  *int
 	IsEpic      bool
 	StoryPoints *uint
+	Labels      *string
 }
 
 func main() {
@@ -43,7 +45,7 @@ func main() {
 	client := github.NewClient(tc)
 
 	var githubIssues []*github.Issue
-	var page int = 0
+	var page = 0
 
 	// list all repositories for the authenticated user
 	for {
@@ -105,6 +107,7 @@ func main() {
 			Number:    issue.Number,
 			Title:     issue.Title,
 			State:     issue.State,
+			Labels:    labelsToString(issue.Labels),
 			Milestone: milestoneTitle,
 			//
 			EpicTitle:  epicTitle,
@@ -132,6 +135,14 @@ func main() {
 		log.Fatal("error: ", err)
 	}
 
+}
+
+func labelsToString(labels []*github.Label) *string {
+	var str string
+	for _, label := range labels {
+		str = fmt.Sprintf("%s, %s", str, *label.Name)
+	}
+	return &str
 }
 
 func makeIssueMap(githubIssues []*github.Issue) map[int]*github.Issue {
